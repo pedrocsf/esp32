@@ -27,10 +27,15 @@
 bool autoRestart = true;
 bool staticMode = false;
 int selectedMacIndex = 0;
-unsigned long restartInterval = 1; // Corrigido para 1000ms (1 segundo)
+unsigned long restartInterval = 250; // Tempo em ms para reinicializações
 
 unsigned long lastMenuCheck = 0;
 const unsigned long MENU_CHECK_INTERVAL = 100;
+
+// Variáveis para controle de tempo de boot
+unsigned long bootStartTime = 0;
+unsigned long bootCompleteTime = 0;
+bool bootTimeRecorded = false;
 
 uint8_t getNextBPM()
 {
@@ -245,7 +250,7 @@ dP   dP   dP  `8888P'   `8888P'  888888'   Y8888888P
   Serial.println("6 - Listar MACs funcionais");
   Serial.println("7 - Mostrar status atual");
   Serial.println("8 - Definir quantidade de MACs da lista (1-99)");
-  Serial.println("9 - Definir intervalo de restart (1-30000ms)");
+  Serial.println("9 - Definir intervalo de restart (270-30000ms)");
   Serial.println("10 - Reiniciar dispositivo");
   Serial.println("========================");
   Serial.printf("MACs ativos: %d/99\n", macCount);
@@ -315,6 +320,14 @@ void listMacs()
 void showStatus()
 {
   Serial.println("\n=== STATUS ATUAL ===");
+
+  // Mostra tempo de boot se disponível
+  if (bootTimeRecorded)
+  {
+    unsigned long totalBootTime = bootCompleteTime - bootStartTime;
+    Serial.printf("Último tempo de boot: %lu ms\n", totalBootTime);
+  }
+
   if (autoRestart)
   {
     if (useRandomMac)
@@ -355,6 +368,11 @@ void showStatus()
                   mac_list[selectedMacIndex][0], mac_list[selectedMacIndex][1], mac_list[selectedMacIndex][2],
                   mac_list[selectedMacIndex][3], mac_list[selectedMacIndex][4], mac_list[selectedMacIndex][5]);
   }
+
+  // Mostra uptime atual
+  unsigned long uptime = millis();
+  Serial.printf("Tempo ativo: %lu ms (%.2f segundos)\n", uptime, uptime / 1000.0);
+
   Serial.println("==================");
 }
 
@@ -592,8 +610,14 @@ class MyServerCallbacks : public BLEServerCallbacks
 
 void setup()
 {
+  // Marca o início do processo de boot
+  bootStartTime = millis();
+
   Serial.begin(115200);
   delay(2000);
+
+  Serial.println("\n=== INICIANDO BOOT ===");
+  Serial.printf("Tempo de início: %lu ms\n", bootStartTime);
 
   EEPROM.begin(EEPROM_SIZE);
 
@@ -619,7 +643,7 @@ void setup()
   // Carrega intervalo de restart da EEPROM
   unsigned long storedInterval;
   EEPROM.get(EEPROM_RESTART_INTERVAL_ADDR, storedInterval);
-  if (storedInterval >= 100 && storedInterval <= 30000)
+  if (storedInterval >= 250 && storedInterval <= 30000)
   {
     restartInterval = storedInterval;
     Serial.printf("Intervalo de restart carregado: %lu ms\n", restartInterval);
@@ -664,6 +688,7 @@ void setup()
     }
   }
 
+  Serial.println("--- Configurando modo de operação ---");
   if (mode == 1)
   {
     autoRestart = false;
@@ -690,6 +715,7 @@ void setup()
     Serial.println(">>> Digite 'M' ou '2' a qualquer momento para voltar ao menu <<<");
   }
 
+  Serial.println("--- Selecionando MAC ---");
   // --- Seleciona MAC ---
   uint8_t macToUse[6];
   if (staticMode && useCustomMac)
@@ -715,8 +741,10 @@ void setup()
     Serial.printf("Usando MAC automático da lista (índice %d)\n", macIndex);
   }
 
+  Serial.println("--- Configurando MAC base ---");
   esp_base_mac_addr_set(macToUse);
 
+  Serial.println("--- Inicializando BLE ---");
   // --- Inicia BLE ---
   BLEDevice::init(DEVICE_NAME);
 
@@ -725,9 +753,11 @@ void setup()
                 realMac[0], realMac[1], realMac[2],
                 realMac[3], realMac[4], realMac[5]);
 
+  Serial.println("--- Criando servidor BLE ---");
   BLEServer *pServer = BLEDevice::createServer();
   pServer->setCallbacks(new MyServerCallbacks());
 
+  Serial.println("--- Criando serviços BLE ---");
   // --- Serviços (UUIDs) ---
   BLEService *heartRateService = pServer->createService(BLEUUID((uint16_t)0x180D));
   BLEService *userDataService = pServer->createService(BLEUUID((uint16_t)0x181C));
@@ -741,6 +771,7 @@ void setup()
   deviceInfoService->start();
   customService->start();
 
+  Serial.println("--- Configurando advertising ---");
   // --- Advertising ---
   BLEAdvertising *pAdvertising = BLEDevice::getAdvertising();
   BLEAdvertisementData advData;
@@ -774,20 +805,33 @@ void setup()
   memcpy(&nomeData[2], nome, nomeLength);
   advData.addData(std::string((const char *)nomeData, sizeof(nomeData)));
 
+  Serial.println("--- Iniciando advertising ---");
   // Inicia advertising
   pAdvertising->setAdvertisementData(advData);
   pAdvertising->start();
-  Serial.print("BPM: ");
-  Serial.println(bpm);
+
+  // Marca o fim do processo de boot e calcula o tempo total
+  bootCompleteTime = millis();
+  unsigned long totalBootTime = (bootCompleteTime - bootStartTime)/10;
+  bootTimeRecorded = true;
+
+  Serial.println("\n╔════════════════════════════════════════╗");
+  Serial.println("║           INFORMAÇÕES GERAIS           ║");
+  Serial.println("╚════════════════════════════════════════╝");
+  Serial.printf("  Tempo de boot: %6lu ms               \n", totalBootTime);
+  Serial.printf("  BPM atual: %8d                   \n", bpm);
+  Serial.printf("  Bateria: %9d%%                   \n", battery);
+  Serial.println("╚════════════════════════════════════════╝");
 
   if (staticMode)
   {
-    Serial.println("=== MODO ESTÁTICO ATIVO ===");
+    Serial.println("\n=== MODO ESTÁTICO ATIVO ===");
     showMenu();
   }
   else
   {
-    Serial.println("Advertising iniciado - Modo Automático");
+    Serial.println("\nAdvertising iniciado - Modo Automático");
+    Serial.printf("Próximo restart em %lu ms\n", restartInterval);
     Serial.println(">>> Digite 'M' ou '2' para acessar o menu <<<");
   }
 }
@@ -840,8 +884,16 @@ void loop()
       lastMenuCheck = currentTime;
     }
 
+    // Mostra countdown para o próximo restart
+    unsigned long timeUntilRestart = restartInterval - (currentTime % restartInterval);
+    if (timeUntilRestart <= 1000 && timeUntilRestart > 900) // Mostra apenas quando faltam ~1 segundo
+    {
+      Serial.printf("Reiniciando em %lu ms...\n", timeUntilRestart);
+    }
+
     // Reinicia com o intervalo configurável
     vTaskDelay(pdMS_TO_TICKS(restartInterval));
+    Serial.println("\n=== INICIANDO RESTART ===");
     esp_restart();
   }
 }
