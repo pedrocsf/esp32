@@ -10,14 +10,16 @@
 #include "esp_system.h"
 
 // --- CONFIGS ---
-#define EEPROM_SIZE 8
+#define EEPROM_SIZE 64 // Aumentado para acomodar todas as configurações
 #define EEPROM_ADDR 0
 #define EEPROM_BPM_ADDR 1
 #define EEPROM_DIR_ADDR 2
-#define EEPROM_MODE_ADDR 3           // 0 = auto restart, 1 = static mode
-#define EEPROM_SELECTED_MAC_ADDR 4   // Índice do MAC selecionado
-#define EEPROM_USE_CUSTOM_MAC_ADDR 5 // 0 = usar lista, 1 = usar customizado
-#define EEPROM_CUSTOM_MAC_ADDR 6     // Início do MAC customizado (6 bytes)
+#define EEPROM_MODE_ADDR 3
+#define EEPROM_SELECTED_MAC_ADDR 4
+#define EEPROM_USE_CUSTOM_MAC_ADDR 5
+#define EEPROM_CUSTOM_MAC_ADDR 6        // 6 bytes (6-11)
+#define EEPROM_MAC_COUNT_ADDR 12        // Novo endereço para macCount
+#define EEPROM_RESTART_INTERVAL_ADDR 16 // 4 bytes para unsigned long (16-19)
 
 #define DEVICE_NAME "HW706-0047980"
 
@@ -25,6 +27,7 @@
 bool autoRestart = true;
 bool staticMode = false;
 int selectedMacIndex = 0;
+unsigned long restartInterval = 1; // Corrigido para 1000ms (1 segundo)
 
 unsigned long lastMenuCheck = 0;
 const unsigned long MENU_CHECK_INTERVAL = 100;
@@ -69,7 +72,7 @@ uint8_t getNextBPM()
 }
 
 // --- LISTA DE MACs UNICAST VÁLIDOS ---
-const int macCount = 99;
+int macCount = 99; // Mudança de const para variável modificável
 uint8_t mac_list[99][6] = {
     {0xC2, 0x52, 0xF5, 0xC7, 0xD6, 0xFE},
     {0xD2, 0x4F, 0x3A, 0x77, 0x22, 0x10},
@@ -175,9 +178,18 @@ uint8_t mac_list[99][6] = {
 int getNextMacIndex()
 {
   int idx = EEPROM.read(EEPROM_ADDR);
+
+  // Validação adicional
+  if (idx >= macCount)
+  {
+    idx = 0;
+  }
+
   idx = (idx + 1) % macCount;
   EEPROM.write(EEPROM_ADDR, idx);
   EEPROM.commit();
+
+  Serial.printf("DEBUG: Próximo MAC index: %d (macCount: %d)\n", idx, macCount);
   return idx;
 }
 
@@ -225,15 +237,19 @@ dP   dP   dP  `8888P'   `8888P'  888888'   Y8888888P
   Serial.println("\n>>>>>>> EMULADOR DE BANDS <<<<<<<\n");
   Serial.println("\n'Criado para manter a sanidade dos devs'\n\n");
   Serial.println("\n==========MENU==========");
-  Serial.println("1 - Modo Automático com lista pré-definida (cicla pelos 99 MACs funcionais)");
-  Serial.println("2 - Modo Automático com MAC randômico (gera MAC aleatório a cada boot - talvez a box não os enxerge)");
-  Serial.println("3 - Modo Estático (para reinicializações e mantem apenas 1 MAC)");
-  Serial.println("4 - Selecionar MAC específico da lista (0-98)");
-  Serial.println("5 - Digitar MAC customizado (formato: AA:BB:CC:DD:EE:FF - envie de uma vez a string)");
-  Serial.println("6 - Listar os 99 MACs funcionais");
+  Serial.println("1 - Modo Automático com lista pré-definida");
+  Serial.println("2 - Modo Automático com MAC randômico");
+  Serial.println("3 - Modo Estático");
+  Serial.println("4 - Selecionar MAC específico da lista");
+  Serial.println("5 - Digitar MAC customizado");
+  Serial.println("6 - Listar MACs funcionais");
   Serial.println("7 - Mostrar status atual");
-  Serial.println("8 - Reiniciar dispositivo");
+  Serial.println("8 - Definir quantidade de MACs da lista (1-99)");
+  Serial.println("9 - Definir intervalo de restart (1-30000ms)");
+  Serial.println("10 - Reiniciar dispositivo");
   Serial.println("========================");
+  Serial.printf("MACs ativos: %d/99\n", macCount);
+  Serial.printf("Intervalo restart: %lu ms\n", restartInterval);
   Serial.print("Escolha uma opção: ");
 }
 
@@ -309,6 +325,7 @@ void showStatus()
     {
       Serial.println("Modo: Automático com Lista Pré-definida");
     }
+    Serial.printf("Intervalo de restart: %lu ms\n", restartInterval);
   }
   else
   {
@@ -361,7 +378,7 @@ void processMenuCommand()
       EEPROM.write(EEPROM_USE_CUSTOM_MAC_ADDR, 0);
       EEPROM.commit();
       Serial.println("Modo automático com lista pré-definida ativado! Reiniciando...");
-      delay(1000);
+      delay(restartInterval);
       esp_restart();
       break;
 
@@ -479,6 +496,74 @@ void processMenuCommand()
       break;
 
     case 8:
+    {
+      Serial.printf("\nQuantidade atual de MACs: %d\n", macCount);
+      Serial.print("Digite a nova quantidade (1-99): ");
+      while (!Serial.available())
+      {
+        delay(10);
+      }
+      input = Serial.readStringUntil('\n');
+      input.trim();
+      int newCount = input.toInt();
+
+      if (newCount >= 1 && newCount <= 99)
+      {
+        macCount = newCount;
+        // Salva na EEPROM no endereço correto
+        EEPROM.write(EEPROM_MAC_COUNT_ADDR, macCount);
+        EEPROM.commit();
+
+        Serial.printf("Quantidade de MACs definida para: %d\n", macCount);
+        Serial.println("Agora o sistema usará apenas os primeiros " + String(macCount) + " MACs da lista.");
+
+        // Se o MAC selecionado atual está fora do novo range, resetar para 0
+        if (selectedMacIndex >= macCount)
+        {
+          selectedMacIndex = 0;
+          EEPROM.write(EEPROM_SELECTED_MAC_ADDR, selectedMacIndex);
+          EEPROM.commit();
+          Serial.println("MAC selecionado resetado para índice 0 (fora do novo range).");
+        }
+      }
+      else
+      {
+        Serial.println("Valor inválido! Use valores entre 1 e 99.");
+      }
+      showMenu();
+      break;
+    }
+
+    case 9:
+    {
+      Serial.printf("\nIntervalo atual de restart: %lu ms\n", restartInterval);
+      Serial.print("Digite o novo intervalo em ms: ");
+      while (!Serial.available())
+      {
+        delay(10);
+      }
+      input = Serial.readStringUntil('\n');
+      input.trim();
+      unsigned long newInterval = input.toInt();
+
+      if (newInterval >= 1 && newInterval <= 30000)
+      {
+        restartInterval = newInterval;
+        // Salva na EEPROM usando put para unsigned long
+        EEPROM.put(EEPROM_RESTART_INTERVAL_ADDR, restartInterval);
+        EEPROM.commit();
+        Serial.printf("Intervalo de restart definido para: %lu ms\n", restartInterval);
+        Serial.println("Esta configuração foi salva e será aplicada no próximo modo automático.");
+      }
+      else
+      {
+        Serial.println("Valor inválido! Respeite o intervalo de tempo mínimo e máximo.");
+      }
+      showMenu();
+      break;
+    }
+
+    case 10:
       Serial.println("Reiniciando dispositivo...");
       delay(1000);
       esp_restart();
@@ -517,6 +602,35 @@ void setup()
   uint8_t storedMacIndex = EEPROM.read(EEPROM_SELECTED_MAC_ADDR);
   uint8_t storedUseCustom = EEPROM.read(EEPROM_USE_CUSTOM_MAC_ADDR);
 
+  // Carrega quantidade de MACs da EEPROM
+  uint8_t storedMacCount = EEPROM.read(EEPROM_MAC_COUNT_ADDR);
+  if (storedMacCount >= 1 && storedMacCount <= 99)
+  {
+    macCount = storedMacCount;
+    Serial.printf("Quantidade de MACs carregada: %d\n", macCount);
+  }
+  else
+  {
+    // Se não há valor válido, salva o padrão
+    EEPROM.write(EEPROM_MAC_COUNT_ADDR, macCount);
+    EEPROM.commit();
+  }
+
+  // Carrega intervalo de restart da EEPROM
+  unsigned long storedInterval;
+  EEPROM.get(EEPROM_RESTART_INTERVAL_ADDR, storedInterval);
+  if (storedInterval >= 100 && storedInterval <= 30000)
+  {
+    restartInterval = storedInterval;
+    Serial.printf("Intervalo de restart carregado: %lu ms\n", restartInterval);
+  }
+  else
+  {
+    // Se não há valor válido, salva o padrão
+    EEPROM.put(EEPROM_RESTART_INTERVAL_ADDR, restartInterval);
+    EEPROM.commit();
+  }
+
   // Se não há valor válido na EEPROM, define modo padrão
   if (mode > 2)
   {
@@ -525,10 +639,18 @@ void setup()
     EEPROM.commit();
   }
 
-  // Carrega índice do MAC selecionado
+  // Carrega índice do MAC selecionado - CORRIGIDO
   if (storedMacIndex < macCount)
   {
     selectedMacIndex = storedMacIndex;
+  }
+  else
+  {
+    // Se índice inválido, resetar para 0
+    selectedMacIndex = 0;
+    EEPROM.write(EEPROM_SELECTED_MAC_ADDR, selectedMacIndex);
+    EEPROM.commit();
+    Serial.println("MAC index resetado para 0 (valor inválido na EEPROM)");
   }
 
   // Carrega configuração de MAC customizado
@@ -718,8 +840,8 @@ void loop()
       lastMenuCheck = currentTime;
     }
 
-    // Reinicia a cada 500ms
-    vTaskDelay(pdMS_TO_TICKS(1000));
+    // Reinicia com o intervalo configurável
+    vTaskDelay(pdMS_TO_TICKS(restartInterval));
     esp_restart();
   }
 }
