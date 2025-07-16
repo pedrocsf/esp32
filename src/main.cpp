@@ -222,7 +222,7 @@ void showMenu()
 88   88   88 Y8.   .8P Y8.   .8P 88  .d8P  d8'       
 dP   dP   dP  `8888P'   `8888P'  888888'   Y8888888P 
                              )rawliteral");
-  Serial.println("\n'>>>>>>> EMULADOR DE BANDS <<<<<<<'\n");
+  Serial.println("\n>>>>>>> EMULADOR DE BANDS <<<<<<<\n");
   Serial.println("\n'Criado para manter a sanidade dos devs'\n\n");
   Serial.println("\n==========MENU==========");
   Serial.println("1 - Modo Automático com lista pré-definida (cicla pelos 99 MACs funcionais)");
@@ -390,7 +390,7 @@ void processMenuCommand()
 
     case 4:
     {
-      Serial.print("Digite o índice do MAC da lista (0-98): ");
+      Serial.print("\n Digite o índice do MAC da lista (0-98): ");
       while (!Serial.available())
       {
         delay(10);
@@ -719,7 +719,7 @@ void loop()
     }
 
     // Reinicia a cada 500ms
-    vTaskDelay(pdMS_TO_TICKS(500));
+    vTaskDelay(pdMS_TO_TICKS(1000));
     esp_restart();
   }
 }
