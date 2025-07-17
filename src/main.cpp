@@ -200,6 +200,7 @@ int getNextMacIndex()
 
 // Adicione estas variáveis após as outras variáveis de controle
 uint8_t customMac[6] = {0x00, 0x00, 0x00, 0x00, 0x00, 0x00};
+
 bool useCustomMac = false;
 bool useRandomMac = false;
 
@@ -239,9 +240,9 @@ void showMenu()
 88   88   88 Y8.   .8P Y8.   .8P 88  .d8P  d8'       
 dP   dP   dP  `8888P'   `8888P'  888888'   Y8888888P 
                              )rawliteral");
-  Serial.println("\n>>>>>>> EMULADOR DE BANDS <<<<<<<\n");
-  Serial.println("\n'Criado para manter a sanidade dos devs'\n\n");
-  Serial.println("\n==========MENU==========");
+  Serial.println("\n===========EMULADOR DE BANDS===========\n");
+  Serial.println("'Criado para manter a sanidade dos devs'\n");
+  Serial.println("\n--------------------MENU---------------------");
   Serial.println("1 - Modo Automático com lista pré-definida");
   Serial.println("2 - Modo Automático com MAC randômico");
   Serial.println("3 - Modo Estático");
@@ -252,10 +253,10 @@ dP   dP   dP  `8888P'   `8888P'  888888'   Y8888888P
   Serial.println("8 - Definir quantidade de MACs da lista (1-99)");
   Serial.println("9 - Definir intervalo de restart (270-30000ms)");
   Serial.println("10 - Reiniciar dispositivo");
-  Serial.println("========================");
+  Serial.println("----------------------------------------------");
   Serial.printf("MACs ativos: %d/99\n", macCount);
   Serial.printf("Intervalo restart: %lu ms\n", restartInterval);
-  Serial.print("Escolha uma opção: ");
+  Serial.print("\nEscolha uma opção: ");
 }
 
 // --- Função para validar e converter MAC ---
