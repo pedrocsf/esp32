@@ -656,10 +656,16 @@ void setup()
     EEPROM.commit();
   }
 
-  // Se não há valor válido na EEPROM, define modo padrão
+  // ALTERAÇÃO: Define modo estático por padrão independente do valor na EEPROM
+  // Se você quiser manter a persistência, remova estas 4 linhas e deixe a lógica original
+  mode = 1; // Força modo estático
+  EEPROM.write(EEPROM_MODE_ADDR, mode);
+  EEPROM.commit();
+
+  // Se não há valor válido na EEPROM, define modo padrão (esta parte agora sempre será modo estático)
   if (mode > 2)
   {
-    mode = 1; // Modo estático por padrão para mostrar o menu
+    mode = 1; // Modo estático por padrão
     EEPROM.write(EEPROM_MODE_ADDR, mode);
     EEPROM.commit();
   }
@@ -690,31 +696,11 @@ void setup()
   }
 
   Serial.println("--- Configurando modo de operação ---");
-  if (mode == 1)
-  {
-    autoRestart = false;
-    staticMode = true;
-    useRandomMac = false;
-    Serial.println("=== INICIANDO EM MODO ESTÁTICO ===");
-  }
-  else if (mode == 2)
-  {
-    autoRestart = true;
-    staticMode = false;
-    useCustomMac = false;
-    useRandomMac = true;
-    Serial.println("=== INICIANDO EM MODO AUTOMÁTICO RANDÔMICO ===");
-    Serial.println(">>> Digite 'M' ou '2' a qualquer momento para voltar ao menu <<<");
-  }
-  else // mode == 0
-  {
-    autoRestart = true;
-    staticMode = false;
-    useCustomMac = false;
-    useRandomMac = false;
-    Serial.println("=== INICIANDO EM MODO AUTOMÁTICO COM LISTA ===");
-    Serial.println(">>> Digite 'M' ou '2' a qualquer momento para voltar ao menu <<<");
-  }
+  // ALTERAÇÃO: Remove as condições e força sempre modo estático
+  autoRestart = false;
+  staticMode = true;
+  useRandomMac = false;
+  Serial.println("=== INICIANDO EM MODO ESTÁTICO (PADRÃO) ===");
 
   Serial.println("--- Selecionando MAC ---");
   // --- Seleciona MAC ---
@@ -813,7 +799,7 @@ void setup()
 
   // Marca o fim do processo de boot e calcula o tempo total
   bootCompleteTime = millis();
-  unsigned long totalBootTime = (bootCompleteTime - bootStartTime)/10;
+  unsigned long totalBootTime = (bootCompleteTime - bootStartTime) / 10;
   bootTimeRecorded = true;
 
   Serial.println("\n╔════════════════════════════════════════╗");
